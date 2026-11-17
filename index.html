@@ -91,6 +91,12 @@
   .target-box { border: 1px solid var(--line); border-radius: 6px; padding: 8px; max-height: 220px; overflow: auto; }
   .target-box .tg-row { margin-bottom: 4px; }
   .target-box label { color: var(--text); margin-right: 8px; font-size: 13px; white-space: nowrap; }
+  /* チェックの単位（v1.2）：学年ごとのときは、組のチェックを隠して学年だけ選ぶ */
+  .target-box.grade-mode label.cl { display: none; }
+  .target-box.grade-mode .tg-row { display: inline-block; margin-right: 6px; }
+  .unit-pick label { margin-right: 14px; color: var(--text); white-space: nowrap; }
+  .card .sub { font-size: 12px; color: var(--sub); }
+  .tag.unit { background: #f1ecfb; color: #6b46c1; border-color: #d4c6f0; }
   textarea.copybox { width: 100%; height: 110px; }
   .help h3 { font-size: 15px; margin: 14px 0 4px; }
   .help p, .help li { line-height: 1.7; }
@@ -147,7 +153,13 @@
             <select id="fKind"></select>
             <label>締切日</label>
             <div><input type="date" id="fDue"> <span class="muted">（空欄なら締切なし）</span></div>
-            <label>出すクラス</label>
+            <label>チェックの単位</label>
+            <div class="unit-pick">
+              <label><input type="radio" name="fUnit" value="class"> 学級ごと</label>
+              <label><input type="radio" name="fUnit" value="grade"> 学年ごと</label>
+              <span class="muted">学年で1つにまとめて出す物は「学年ごと」</span>
+            </div>
+            <label id="fTargetLabel">出すクラス</label>
             <div>
               <div class="row" style="margin-bottom:4px">
                 <button class="btn" type="button" id="tgAll">全部</button>
@@ -230,6 +242,16 @@
     </div>
 
     <div class="panel">
+      <h2>チェックの単位</h2>
+      <p class="muted">新しく提出物を作るときの初めの単位です。提出物ごとに、登録・編集の画面で変えられます。</p>
+      <div class="row unit-pick">
+        <label><input type="radio" name="sUnit" value="class"> 学級ごと（各クラスの提出を1つずつチェック）</label>
+        <label><input type="radio" name="sUnit" value="grade"> 学年ごと（学年で1つにまとめてチェック）</label>
+      </div>
+      <p class="muted">「学年ごと」では、特別支援学級はまとめて1つになります。</p>
+    </div>
+
+    <div class="panel">
       <h2>提出物の種類</h2>
       <p class="muted">1行に1つ。一覧の絞り込みに使います。</p>
       <textarea id="kindInput" rows="5" style="width:320px"></textarea>
@@ -264,6 +286,7 @@
       <ol>
         <li>「提出物」タブの「＋ 提出物を追加」を押します。登録した提出物は、1つずつタブになって並びます。</li>
         <li>名前・種類・締切日を入れ、出すクラスにチェックを付けて「保存」します（例：低学年だけの調査なら1・2年だけ）。</li>
+        <li>学年で1つにまとめて出す物は、「チェックの単位」を「学年ごと」にします。枠が学年ごとに1つになり、出す学年を選びます。初めの単位は「設定・バックアップ」で変えられます。</li>
         <li>毎週ある週案などは、前の提出物を選んで「複製」すると、クラスの設定を引き継いで作れます。</li>
       </ol>
       <h3>③ 受け取ったらチェックする</h3>
@@ -297,15 +320,18 @@
    データは localStorage（キー：teishutsu_data）に保存する。
    ========================================================= */
 
-const APP_VERSION = '1.1';
+const APP_VERSION = '1.2';
 const STORAGE_KEY = 'teishutsu_data';
 const DEFAULT_KINDS = ['書類（週案・指導要録など）', '集金・調査の回答', '通知表・所見', 'その他'];
 
 // ---------- データ ----------
 // classes: [{ id, label:'1-1', grade:1, teacher:'' }]  grade 0 は特別支援学級
-// items:   [{ id, name, kind, due:'YYYY-MM-DD', memo, target:[classId], done:{ classId:'YYYY-MM-DD' }, created }]
+// items:   [{ id, name, kind, due:'YYYY-MM-DD', memo, unit, target:[classId], grades:[学年], done:{ 単位のid:'YYYY-MM-DD' }, created }]
+//   unit：'class'＝学級ごと（done のキーはクラスの id）、'grade'＝学年ごと（done のキーは 'g3' など。g0 は特別支援学級）
+//   v1.1 までの提出物は unit がないので、学級ごととして扱う
 let state = {
   version: APP_VERSION,
+  defaultUnit: 'class',             // 新しく作る提出物の初めの単位（v1.2）
   gradeCounts: [0, 0, 0, 0, 0, 0],  // 1〜6年の組の数
   specials: [],                     // 特別支援学級の名前
   classes: [],
@@ -363,10 +389,20 @@ function dueStatus(item) {
 }
 // 対象クラスのうち、今もある（設定で消えていない）クラスだけ
 function targetClasses(item) { return item.target.map(classById).filter(Boolean); }
+function isGradeUnit(item) { return item.unit === 'grade'; }
+function gradeSort(a, b) { return (a || 99) - (b || 99); }   // 1〜6年、最後に特別支援学級（0）
+// チェックする単位の一覧。学級ごと＝クラス、学年ごと＝学年（今クラスがある学年だけ）
+function units(item) {
+  if (!isGradeUnit(item)) return targetClasses(item);
+  return (item.grades || []).filter(g => state.classes.some(c => c.grade === g)).sort(gradeSort).map(g => {
+    const cs = state.classes.filter(c => c.grade === g);
+    return { id: 'g' + g, grade: g, label: gradeName(g), teacher: '', classes: cs };
+  });
+}
 function progress(item) {
-  const tc = targetClasses(item);
-  const n = tc.filter(c => item.done[c.id]).length;
-  return { n, total: tc.length, complete: tc.length > 0 && n === tc.length };
+  const us = units(item);
+  const n = us.filter(u => item.done[u.id]).length;
+  return { n, total: us.length, complete: us.length > 0 && n === us.length };
 }
 
 // ---------- タブ切り替え ----------
@@ -417,7 +453,7 @@ function renderItems() {
     const cls = ['item-tab', it.id === selectedId ? 'selected' : '', p.complete ? 'complete' : (ds === 'over' ? 'over' : '')].join(' ');
     return `<button class="${cls}" data-id="${it.id}" title="${esc(it.name)}">
       <span class="name">${esc(it.name)}</span>
-      <span class="meta"><span>${it.due ? md(it.due) + '（' + youbi(it.due) + '）' : '締切なし'}</span><span>${p.n}/${p.total}</span>${tag}</span>
+      <span class="meta"><span>${it.due ? md(it.due) + '（' + youbi(it.due) + '）' : '締切なし'}</span><span>${p.n}/${p.total}</span>${isGradeUnit(it) ? '<span class="tag unit">学年</span>' : ''}${tag}</span>
     </button>`;
   }).join('') + '<button class="item-tab add" id="btnNew">＋ 提出物を追加</button>';
   document.querySelectorAll('#itemList .item-tab[data-id]').forEach(tb => tb.addEventListener('click', () => {
@@ -441,22 +477,29 @@ function renderDetail() {
   const ds = dueStatus(it);
   document.getElementById('dName').textContent = it.name;
   document.getElementById('dMeta').innerHTML =
-    `${esc(it.kind)}　／　締切 ${it.due ? md(it.due) + '（' + youbi(it.due) + '）' : 'なし'}　／　提出 ${p.n}/${p.total}` +
+    `${esc(it.kind)}　／　${isGradeUnit(it) ? '学年ごとにチェック' : '学級ごとにチェック'}　／　締切 ${it.due ? md(it.due) + '（' + youbi(it.due) + '）' : 'なし'}　／　提出 ${p.n}/${p.total}` +
     (it.memo ? `<br>メモ：${esc(it.memo)}` : '');
 
-  // 学年ごとにまとめる
-  const tc = targetClasses(it);
-  const grades = [...new Set(tc.map(c => c.grade))].sort((a, b) => (a || 99) - (b || 99));
-  document.getElementById('cardsArea').innerHTML = tc.length === 0
-    ? '<p class="muted">出すクラスが選ばれていません。「編集」で選んでください。</p>'
-    : grades.map(g => `<div class="grade-block"><h3>${gradeName(g)}</h3><div class="cards">` +
-      tc.filter(c => c.grade === g).map(c => {
-        const d = it.done[c.id];
-        const cls = d ? 'yes' : 'no' + (ds === 'over' ? ' over' : '');
-        const st = d ? `✔ 提出済<input type="date" value="${d}" data-date="${c.id}">` : (ds === 'over' ? '未提出（締切後）' : '未提出');
-        return `<div class="card ${cls}" data-cid="${c.id}"><div class="cls">${esc(c.label)}</div>` +
-          (c.teacher ? `<div class="teacher">${esc(c.teacher)}</div>` : '') + `<div class="st">${st}</div></div>`;
-      }).join('') + '</div></div>').join('');
+  // 1つの枠（学級ごと＝クラス、学年ごと＝学年）
+  const card = u => {
+    const d = it.done[u.id];
+    const cls = d ? 'yes' : 'no' + (ds === 'over' ? ' over' : '');
+    const st = d ? `✔ 提出済<input type="date" value="${d}" data-date="${u.id}">` : (ds === 'over' ? '未提出（締切後）' : '未提出');
+    const sub = u.classes ? `<div class="sub">${esc(u.classes.map(c => c.label).join('・'))}</div>`
+      : (u.teacher ? `<div class="teacher">${esc(u.teacher)}</div>` : '');
+    return `<div class="card ${cls}" data-cid="${u.id}"><div class="cls">${esc(u.label)}</div>${sub}<div class="st">${st}</div></div>`;
+  };
+  const us = units(it);
+  let html;
+  if (us.length === 0) html = `<p class="muted">出す${isGradeUnit(it) ? '学年' : 'クラス'}が選ばれていません。「編集」で選んでください。</p>`;
+  else if (isGradeUnit(it)) html = `<div class="grade-block"><div class="cards">${us.map(card).join('')}</div></div>`;
+  else {
+    // 学級ごとは、学年ごとにまとめて並べる
+    const grades = [...new Set(us.map(c => c.grade))].sort(gradeSort);
+    html = grades.map(g => `<div class="grade-block"><h3>${gradeName(g)}</h3><div class="cards">` +
+      us.filter(c => c.grade === g).map(card).join('') + '</div></div>').join('');
+  }
+  document.getElementById('cardsArea').innerHTML = html;
 
   // 枠を押す → 提出済／未提出を切り替える
   document.querySelectorAll('#cardsArea .card').forEach(card => card.addEventListener('click', () => {
@@ -480,13 +523,14 @@ function toggleDone(item, cid) {
 document.getElementById('btnRemind').addEventListener('click', () => {
   const it = state.items.find(x => x.id === selectedId);
   if (!it) return;
-  const rest = targetClasses(it).filter(c => !it.done[c.id]);
+  const rest = units(it).filter(u => !it.done[u.id]);
+  const word = isGradeUnit(it) ? '学年' : 'クラス';
   let text;
-  if (rest.length === 0) text = `【${it.name}】全クラス提出済です。ありがとうございました。`;
+  if (rest.length === 0) text = `【${it.name}】全${word}提出済です。ありがとうございました。`;
   else {
-    const names = rest.map(c => c.label + (c.teacher ? '（' + c.teacher + '先生）' : '')).join('、');
+    const names = rest.map(u => u.label + (u.teacher ? '（' + u.teacher + '先生）' : '')).join('、');
     text = `【${it.name}】` + (it.due ? `締切は${md(it.due)}（${youbi(it.due)}）です。` : '') +
-      `\nまだ提出されていないクラス：${names}\n提出をお願いします。`;
+      `\nまだ提出されていない${word}：${names}\n提出をお願いします。`;
   }
   document.getElementById('remindText').value = text;
   document.getElementById('remindArea').classList.remove('hidden');
@@ -510,7 +554,7 @@ function renderTargetBox(checkedIds) {
   }
   box.innerHTML = grades.map(g => `<div class="tg-row"><label><input type="checkbox" data-grade="${g}"> <b>${gradeName(g)}</b></label>` +
     state.classes.filter(c => c.grade === g).map(c =>
-      `<label><input type="checkbox" data-cid="${c.id}" ${set.has(c.id) ? 'checked' : ''}> ${esc(c.label)}</label>`).join('') + '</div>').join('');
+      `<label class="cl"><input type="checkbox" data-cid="${c.id}" ${set.has(c.id) ? 'checked' : ''}> ${esc(c.label)}</label>`).join('') + '</div>').join('');
   // 学年のチェックで、その学年をまとめて付け外し
   box.querySelectorAll('input[data-grade]').forEach(gc => {
     const g = Number(gc.dataset.grade);
@@ -526,6 +570,21 @@ function setTargets(fn) {
     gc.checked = [...document.querySelectorAll('#targetBox input[data-cid]')].filter(i => classById(i.dataset.cid).grade === g).every(i => i.checked);
   });
 }
+// フォームで選んでいるチェックの単位（v1.2）
+function formUnit() { const r = document.querySelector('input[name="fUnit"]:checked'); return r ? r.value : 'class'; }
+// 単位に合わせて「出すクラス」の見せ方を変える。
+// 学年ごとにしたときは、1組でも選ばれている学年を学年まるごと選んだことにする
+function applyFormUnit() {
+  const g = formUnit() === 'grade';
+  document.getElementById('fTargetLabel').textContent = g ? '出す学年' : '出すクラス';
+  document.getElementById('targetBox').classList.toggle('grade-mode', g);
+  if (g) {
+    const checked = new Set([...document.querySelectorAll('#targetBox input[data-cid]:checked')].map(i => classById(i.dataset.cid).grade));
+    setTargets(c => checked.has(c.grade));
+  }
+}
+document.querySelectorAll('input[name="fUnit"]').forEach(r => r.addEventListener('change', applyFormUnit));
+
 document.getElementById('tgAll').addEventListener('click', () => setTargets(() => true));
 document.getElementById('tgNone').addEventListener('click', () => setTargets(() => false));
 document.getElementById('tgNormal').addEventListener('click', () => setTargets(c => c.grade !== 0));
@@ -538,7 +597,15 @@ function showForm(item, isCopy) {
   document.getElementById('fKind').value = item ? item.kind : state.kinds[0];
   document.getElementById('fDue').value = item && !isCopy ? (item.due || '') : '';
   document.getElementById('fMemo').value = item ? (item.memo || '') : '';
-  renderTargetBox(item ? item.target : state.classes.map(c => c.id));
+  // 単位：既存の提出物はその単位、新しく作るときは設定の初めの単位
+  const unit = item ? (item.unit || 'class') : (state.defaultUnit || 'class');
+  document.querySelector(`input[name="fUnit"][value="${unit}"]`).checked = true;
+  // 学年ごとの提出物は、その学年の今のクラスをすべて選んだ状態で開く
+  const ids = !item ? state.classes.map(c => c.id)
+    : unit === 'grade' ? state.classes.filter(c => (item.grades || []).includes(c.grade)).map(c => c.id)
+    : item.target;
+  renderTargetBox(ids);
+  applyFormUnit();
   document.getElementById('formPanel').classList.remove('hidden');
   document.getElementById('fName').focus();
 }
@@ -551,14 +618,21 @@ document.getElementById('btnCancelItem').addEventListener('click', hideForm);
 document.getElementById('btnSaveItem').addEventListener('click', () => {
   const name = document.getElementById('fName').value.trim();
   if (!name) { toast('提出物の名前を入れてください'); return; }
+  const unit = formUnit();
   const target = [...document.querySelectorAll('#targetBox input[data-cid]:checked')].map(i => i.dataset.cid);
-  if (target.length === 0) { toast('出すクラスを1つ以上選んでください'); return; }
+  const grades = [...document.querySelectorAll('#targetBox input[data-grade]:checked')].map(i => Number(i.dataset.grade));
+  if (target.length === 0) { toast(unit === 'grade' ? '出す学年を1つ以上選んでください' : '出すクラスを1つ以上選んでください'); return; }
   const data = {
-    name, kind: document.getElementById('fKind').value,
-    due: document.getElementById('fDue').value, memo: document.getElementById('fMemo').value.trim(), target
+    name, kind: document.getElementById('fKind').value, unit,
+    due: document.getElementById('fDue').value, memo: document.getElementById('fMemo').value.trim(),
+    target, grades: unit === 'grade' ? grades : []
   };
   if (editingId) {
-    Object.assign(state.items.find(x => x.id === editingId), data);
+    const it = state.items.find(x => x.id === editingId);
+    // 単位を変えると、今までのチェックは数えられなくなる（記録は消さずに残す）
+    if ((it.unit || 'class') !== unit && Object.keys(it.done).length &&
+        !confirm('チェックの単位を変えると、今までのチェックは表示されなくなります（単位を戻せば元に戻ります）。よろしいですか？')) return;
+    Object.assign(it, data);
     selectedId = editingId;
   } else {
     const it = Object.assign({ id: uid(), done: {}, created: Date.now() }, data);
@@ -592,12 +666,26 @@ function renderMatrix() {
   items.forEach(it => {
     const ds = dueStatus(it);
     const p = progress(it);
-    html += `<tr><th class="itemname">${esc(it.name)}</th><td>${it.due ? md(it.due) : '－'}</td>`;
-    state.classes.forEach(c => {
-      if (!it.target.includes(c.id)) html += '<td class="na">－</td>';
-      else if (it.done[c.id]) html += `<td class="yes" data-i="${it.id}" data-c="${c.id}">○ ${md(it.done[c.id])}</td>`;
-      else html += `<td class="no ${ds === 'over' ? 'over' : ''}" data-i="${it.id}" data-c="${c.id}">${ds === 'over' ? '×' : ''}</td>`;
-    });
+    html += `<tr><th class="itemname">${esc(it.name)}${isGradeUnit(it) ? ' <span class="tag unit">学年</span>' : ''}</th><td>${it.due ? md(it.due) : '－'}</td>`;
+    // 1つのマス（uid＝単位の id、span＝横につなぐクラスの数）
+    const cell = (uid, span) => {
+      const cs = span > 1 ? ` colspan="${span}"` : '';
+      if (it.done[uid]) return `<td class="yes"${cs} data-i="${it.id}" data-c="${uid}">○ ${md(it.done[uid])}</td>`;
+      return `<td class="no ${ds === 'over' ? 'over' : ''}"${cs} data-i="${it.id}" data-c="${uid}">${ds === 'over' ? '×' : ''}</td>`;
+    };
+    if (isGradeUnit(it)) {
+      // 学年ごとの提出物は、その学年のクラスの列をつないで1マスにする（クラスは学年順に並んでいる）
+      const gs = new Set(units(it).map(u => u.grade));
+      state.classes.forEach((c, i) => {
+        if (i > 0 && state.classes[i - 1].grade === c.grade) return;   // 学年の2つ目以降の列はつないだので飛ばす
+        const span = state.classes.filter(x => x.grade === c.grade).length;
+        html += gs.has(c.grade) ? cell('g' + c.grade, span) : '<td class="na">－</td>'.repeat(span);
+      });
+    } else {
+      state.classes.forEach(c => {
+        html += it.target.includes(c.id) ? cell(c.id, 1) : '<td class="na">－</td>';
+      });
+    }
     html += `<td>${p.n}/${p.total}</td></tr>`;
   });
   area.innerHTML = html + '</tbody></table>';
@@ -615,8 +703,14 @@ function renderSettings() {
     `<label>${g}年 <input type="number" min="0" max="10" style="width:52px" data-g="${g}" value="${state.gradeCounts[g - 1] || 0}"> 組</label>`).join('');
   document.getElementById('specialInput').value = state.specials.join('\n');
   document.getElementById('kindInput').value = state.kinds.join('\n');
+  document.querySelector(`input[name="sUnit"][value="${state.defaultUnit === 'grade' ? 'grade' : 'class'}"]`).checked = true;
   renderTeachers();
 }
+// 初めのチェックの単位（v1.2）。選んだらすぐ保存する
+document.querySelectorAll('input[name="sUnit"]').forEach(r => r.addEventListener('change', () => {
+  state.defaultUnit = r.value; save();
+  toast(r.value === 'grade' ? '新しい提出物は「学年ごと」で作ります' : '新しい提出物は「学級ごと」で作ります');
+}));
 function renderTeachers() {
   const area = document.getElementById('teacherArea');
   if (state.classes.length === 0) { area.innerHTML = '<p class="muted">クラスを作ると、ここで担任名を入れられます。</p>'; return; }
@@ -671,7 +765,7 @@ document.getElementById('restoreFile').addEventListener('change', e => {
       const data = JSON.parse(reader.result);
       if (!Array.isArray(data.classes) || !Array.isArray(data.items)) throw new Error('形式が違います');
       if (!confirm('今のデータを、このファイルの内容に置き換えます。よろしいですか？')) return;
-      state = Object.assign({ gradeCounts: [0, 0, 0, 0, 0, 0], specials: [], kinds: DEFAULT_KINDS.slice() }, data);
+      state = Object.assign({ defaultUnit: 'class', gradeCounts: [0, 0, 0, 0, 0, 0], specials: [], kinds: DEFAULT_KINDS.slice() }, data);
       selectedId = null; save(); renderSettings(); toast('復元しました');
     } catch (err) {
       toast('このファイルは読み込めませんでした');
