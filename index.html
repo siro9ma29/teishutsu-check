@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>提出チェックアプリ</title>
+<style>
+  /* ===== 全体の見た目 ===== */
+  :root {
+    --blue: #2b6cb0; --blue-light: #ebf4ff; --gray: #f4f6f8; --line: #d5dbe1;
+    --text: #222; --sub: #667; --ok: #2f855a; --ok-light: #e6f6ec;
+    --ng: #c53030; --ng-light: #fdecec; --warn: #b7791f; --warn-light: #fff6e0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "BIZ UDPGothic", "Hiragino Sans", "Meiryo", sans-serif; color: var(--text); background: var(--gray); font-size: 15px; }
+  header { background: var(--blue); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .save-state { font-size: 12px; opacity: .9; margin-left: auto; }
+  nav { display: flex; gap: 4px; background: #fff; border-bottom: 1px solid var(--line); padding: 0 12px; }
+  nav button { border: none; background: none; padding: 10px 14px; font-size: 15px; cursor: pointer; border-bottom: 3px solid transparent; color: var(--sub); font-family: inherit; }
+  nav button.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: bold; }
+  main { padding: 14px; max-width: 1300px; margin: 0 auto; }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  .panel h2 { font-size: 16px; margin: 0 0 10px; }
+  button.btn { font-family: inherit; font-size: 14px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+  button.btn:hover { background: var(--blue-light); }
+  button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  button.primary:hover { background: #245a94; }
+  button.danger { color: var(--ng); }
+  input, select, textarea { font-family: inherit; font-size: 14px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .muted { color: var(--sub); font-size: 13px; }
+  .hidden { display: none !important; }
+
+  /* ===== 提出物タブ：左に一覧、右に詳細 ===== */
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 14px; align-items: start; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+  .item-list { list-style: none; margin: 0; padding: 0; }
+  .item-list li { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; background: #fff; }
+  .item-list li:hover { background: var(--blue-light); }
+  .item-list li.selected { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue) inset; }
+  .item-list .name { font-weight: bold; }
+  .item-list .meta { font-size: 12px; color: var(--sub); display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+  .bar { height: 6px; background: #e2e8f0; border-radius: 3px; margin-top: 5px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--ok); }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--gray); border: 1px solid var(--line); }
+  .tag.over { background: var(--ng-light); color: var(--ng); border-color: #f5b5b5; }
+  .tag.soon { background: var(--warn-light); color: var(--warn); border-color: #f0d28a; }
+  .tag.done { background: var(--ok-light); color: var(--ok); border-color: #a7dcb9; }
+
+  /* 提出物のタブ（v1.1） */
+  .tabbar-wrap { margin-bottom: 0; }
+  .item-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid var(--blue); }
+  .item-tab { border: 1px solid var(--line); border-bottom: none; border-radius: 8px 8px 0 0; background: #e9eef3; padding: 6px 12px 5px; cursor: pointer; max-width: 240px; font-family: inherit; font-size: 14px; text-align: left; }
+  .item-tab:hover { background: var(--blue-light); }
+  .item-tab.selected { background: #fff; border-color: var(--blue); border-width: 2px 2px 0; margin-bottom: -2px; padding-bottom: 7px; }
+  .item-tab .name { font-weight: bold; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-tab .meta { font-size: 11px; color: var(--sub); display: flex; gap: 6px; align-items: center; }
+  .item-tab.over { border-top: 3px solid var(--ng); }
+  .item-tab.complete { opacity: .75; }
+  .item-tab.add { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: bold; align-self: flex-end; }
+  .item-tab.add:hover { background: #245a94; }
+  #tab-items #detailPanel, #tab-items #formPanel { border-top-left-radius: 0; }
+  .grade-block { margin-bottom: 10px; }
+  .grade-block h3 { font-size: 14px; margin: 0 0 5px; color: var(--sub); }
+  .cards { display: flex; flex-wrap: wrap; gap: 8px; }
+  .card { width: 128px; min-height: 74px; border: 2px solid var(--line); border-radius: 8px; padding: 6px 8px; cursor: pointer; background: #fff; user-select: none; }
+  .card .cls { font-size: 17px; font-weight: bold; }
+  .card .teacher { font-size: 12px; color: var(--sub); }
+  .card .st { font-size: 12px; margin-top: 3px; }
+  .card.yes { background: var(--ok-light); border-color: var(--ok); }
+  .card.yes .st { color: var(--ok); font-weight: bold; }
+  .card.no.over { background: var(--ng-light); border-color: var(--ng); }
+  .card.no.over .st { color: var(--ng); font-weight: bold; }
+  .card input[type=date] { font-size: 12px; padding: 1px 2px; width: 100%; margin-top: 2px; }
+
+  /* ===== 一覧表タブ ===== */
+  .matrix-wrap { overflow-x: auto; }
+  table.matrix { border-collapse: collapse; font-size: 13px; background: #fff; }
+  table.matrix th, table.matrix td { border: 1px solid var(--line); padding: 4px 6px; text-align: center; white-space: nowrap; }
+  table.matrix th.itemname { text-align: left; min-width: 160px; position: sticky; left: 0; background: #fff; }
+  table.matrix thead th { background: var(--gray); }
+  table.matrix td.yes { background: var(--ok-light); color: var(--ok); cursor: pointer; }
+  table.matrix td.no { cursor: pointer; }
+  table.matrix td.no.over { background: var(--ng-light); color: var(--ng); font-weight: bold; }
+  table.matrix td.na { color: #bbb; background: #fafafa; }
+
+  /* ===== 入力フォーム ===== */
+  .form-grid { display: grid; grid-template-columns: 110px 1fr; gap: 8px 10px; align-items: center; }
+  .form-grid label { font-size: 14px; color: var(--sub); }
+  .target-box { border: 1px solid var(--line); border-radius: 6px; padding: 8px; max-height: 220px; overflow: auto; }
+  .target-box .tg-row { margin-bottom: 4px; }
+  .target-box label { color: var(--text); margin-right: 8px; font-size: 13px; white-space: nowrap; }
+  textarea.copybox { width: 100%; height: 110px; }
+  .help h3 { font-size: 15px; margin: 14px 0 4px; }
+  .help p, .help li { line-height: 1.7; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 10px 18px; border-radius: 6px; font-size: 14px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 50; }
+  .toast.show { opacity: .95; }
+
+  /* ===== 印刷 ===== */
+  @media print {
+    header, nav, .no-print { display: none !important; }
+    body { background: #fff; }
+    main { padding: 0; }
+    .panel { border: none; padding: 0; }
+    .layout { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📋 提出チェックアプリ</h1>
+  <span class="muted" style="color:#dbe8f7">担任 → 教務 の提出物の確認用</span>
+  <span class="save-state" id="saveState">保存済み</span>
+</header>
+
+<nav>
+  <button data-tab="items" class="active">提出物</button>
+  <button data-tab="matrix">一覧表</button>
+  <button data-tab="settings">設定・バックアップ</button>
+  <button data-tab="help">？ 使い方</button>
+</nav>
+
+<main>
+  <!-- ===== 提出物タブ ===== -->
+  <section id="tab-items">
+    <!-- 提出物のタブ：1つの提出物＝1つのタブ -->
+    <div class="tabbar-wrap no-print">
+      <div class="row" style="margin-bottom:6px">
+        <select id="filterKind"><option value="">すべての種類</option></select>
+        <label class="muted"><input type="checkbox" id="showDone"> 全クラス提出済のタブも表示</label>
+      </div>
+      <div class="item-tabs" id="itemList"></div>
+      <p class="muted" id="emptyList">提出物がまだありません。「＋ 提出物を追加」から登録してください。</p>
+    </div>
+
+    <div>
+      <div>
+        <!-- 提出物の登録・編集フォーム -->
+        <div class="panel hidden" id="formPanel">
+          <h2 id="formTitle">提出物を追加</h2>
+          <div class="form-grid">
+            <label>提出物の名前</label>
+            <input id="fName" placeholder="例：11月 週案（第3週）">
+            <label>種類</label>
+            <select id="fKind"></select>
+            <label>締切日</label>
+            <div><input type="date" id="fDue"> <span class="muted">（空欄なら締切なし）</span></div>
+            <label>出すクラス</label>
+            <div>
+              <div class="row" style="margin-bottom:4px">
+                <button class="btn" type="button" id="tgAll">全部</button>
+                <button class="btn" type="button" id="tgNone">外す</button>
+                <button class="btn" type="button" id="tgNormal">通常学級だけ</button>
+              </div>
+              <div class="target-box" id="targetBox"></div>
+            </div>
+            <label>メモ</label>
+            <input id="fMemo" placeholder="例：印刷して提出。データは共有フォルダへ">
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="btnSaveItem">保存</button>
+            <button class="btn" id="btnCancelItem">やめる</button>
+          </div>
+        </div>
+
+        <!-- 選んだ提出物の詳細 -->
+        <div class="panel" id="detailPanel">
+          <p class="muted" id="detailEmpty">上のタブから提出物を選ぶと、クラスごとの提出状況が表示されます。</p>
+          <div id="detailBody" class="hidden">
+            <div class="row" style="justify-content:space-between">
+              <div>
+                <h2 id="dName" style="margin:0"></h2>
+                <div class="muted" id="dMeta"></div>
+              </div>
+              <div class="row no-print" style="margin:0">
+                <button class="btn" id="btnEdit">編集</button>
+                <button class="btn" id="btnCopyItem" title="同じクラス設定で新しい提出物を作ります">複製</button>
+                <button class="btn danger" id="btnDelete">削除</button>
+              </div>
+            </div>
+            <p class="muted no-print" style="margin:6px 0 10px">クラスの枠を押すと「提出済」になり、今日の日付が入ります。もう一度押すと「未提出」に戻ります。日付は枠の中で直せます。</p>
+            <div id="cardsArea"></div>
+            <div class="no-print" style="margin-top:12px">
+              <div class="row">
+                <button class="btn" id="btnRemind">未提出のクラスを文にする</button>
+                <button class="btn" onclick="window.print()">印刷</button>
+              </div>
+              <div id="remindArea" class="hidden">
+                <textarea class="copybox" id="remindText"></textarea>
+                <div class="row"><button class="btn primary" id="btnCopyRemind">コピー</button><span class="muted">職員会議の連絡やメッセージに貼り付けて使えます</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 一覧表タブ ===== -->
+  <section id="tab-matrix" class="hidden">
+    <div class="panel">
+      <div class="row no-print">
+        <h2 style="margin:0">提出物 × クラス の一覧</h2>
+        <label class="muted"><input type="checkbox" id="mShowDone"> 全クラス提出済も表示</label>
+        <button class="btn" onclick="window.print()">印刷</button>
+      </div>
+      <p class="muted no-print">○＝提出済（日付）、×＝締切を過ぎて未提出、空欄＝未提出（締切前）、－＝対象外。マスを押すと切り替わります。</p>
+      <div class="matrix-wrap" id="matrixArea"></div>
+    </div>
+  </section>
+
+  <!-- ===== 設定タブ ===== -->
+  <section id="tab-settings" class="hidden">
+    <div class="panel">
+      <h2>クラスの設定</h2>
+      <p class="muted">各学年の組の数を入れて「クラスを作る」を押します。担任名は入れなくても使えます（入れると枠と催促の文に出ます）。</p>
+      <div class="row" id="gradeInputs"></div>
+      <div class="row">
+        <label>特別支援学級（1行に1学級）</label>
+      </div>
+      <textarea id="specialInput" rows="3" style="width:320px" placeholder="例：&#10;ひまわり&#10;さくら"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="btn primary" id="btnMakeClasses">クラスを作る</button>
+        <span class="muted">今までの提出記録は、同じクラス名のところに残ります。</span>
+      </div>
+      <h2 style="margin-top:16px">担任名</h2>
+      <div id="teacherArea"></div>
+    </div>
+
+    <div class="panel">
+      <h2>提出物の種類</h2>
+      <p class="muted">1行に1つ。一覧の絞り込みに使います。</p>
+      <textarea id="kindInput" rows="5" style="width:320px"></textarea>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="btnSaveKinds">種類を保存</button></div>
+    </div>
+
+    <div class="panel">
+      <h2>バックアップ・復元</h2>
+      <p class="muted">データはこの端末のブラウザの中だけに保存されます。学期の終わりや端末を替えるときは、バックアップ（JSONファイル）を取ってください。</p>
+      <div class="row">
+        <button class="btn primary" id="btnBackup">バックアップを保存</button>
+        <label class="btn" style="display:inline-block">ファイルから復元<input type="file" id="restoreFile" accept=".json,application/json" class="hidden"></label>
+      </div>
+      <h2 style="margin-top:16px">年度の切り替え</h2>
+      <div class="row">
+        <button class="btn danger" id="btnClearItems">提出物をすべて消す（クラスの設定は残す）</button>
+      </div>
+      <p class="muted">消す前にバックアップが自動で保存されます。</p>
+    </div>
+  </section>
+
+  <!-- ===== 使い方タブ ===== -->
+  <section id="tab-help" class="hidden">
+    <div class="panel help">
+      <h2>使い方</h2>
+      <h3>① はじめに（年度初めに1回）</h3>
+      <ol>
+        <li>「設定・バックアップ」で、各学年の組の数と特別支援学級の名前を入れ、「クラスを作る」を押します。</li>
+        <li>必要なら担任名を入れます。</li>
+      </ol>
+      <h3>② 提出物を登録する</h3>
+      <ol>
+        <li>「提出物」タブの「＋ 提出物を追加」を押します。登録した提出物は、1つずつタブになって並びます。</li>
+        <li>名前・種類・締切日を入れ、出すクラスにチェックを付けて「保存」します（例：低学年だけの調査なら1・2年だけ）。</li>
+        <li>毎週ある週案などは、前の提出物を選んで「複製」すると、クラスの設定を引き継いで作れます。</li>
+      </ol>
+      <h3>③ 受け取ったらチェックする</h3>
+      <ul>
+        <li>提出物のタブを選び、受け取ったクラスの枠を押します。タブには締切と提出数（例：5/16）が出ます。締切を過ぎて未提出があるタブは上が赤くなります。緑になり、今日の日付が入ります。</li>
+        <li>締切を過ぎても未提出のクラスは赤で表示されます。</li>
+        <li>「未提出のクラスを文にする」で、催促の連絡に使える文ができます。</li>
+      </ul>
+      <h3>④ 全体を見る</h3>
+      <ul>
+        <li>「一覧表」タブで、すべての提出物とクラスを表で見られます。印刷もできます。</li>
+        <li>全クラスが提出済になった提出物は、タブが自動で隠れます（「全クラス提出済のタブも表示」で見られます）。</li>
+      </ul>
+      <h3>データについて</h3>
+      <ul>
+        <li>データはこの端末のブラウザの中だけに保存され、外部には送られません。インターネットがなくても使えます。</li>
+        <li>ブラウザの履歴を消すとデータも消えることがあるので、ときどき「バックアップを保存」をしてください。</li>
+        <li>後任の人には、このHTMLファイルとバックアップのJSONファイルを渡せば、そのまま引き継げます。</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+   提出チェックアプリ
+   担任が教務に出す提出物（書類・調査・通知表など）を
+   クラスごとに「提出済／未提出＋提出日」で記録する。
+   データは localStorage（キー：teishutsu_data）に保存する。
+   ========================================================= */
+
+const APP_VERSION = '1.1';
+const STORAGE_KEY = 'teishutsu_data';
+const DEFAULT_KINDS = ['書類（週案・指導要録など）', '集金・調査の回答', '通知表・所見', 'その他'];
+
+// ---------- データ ----------
+// classes: [{ id, label:'1-1', grade:1, teacher:'' }]  grade 0 は特別支援学級
+// items:   [{ id, name, kind, due:'YYYY-MM-DD', memo, target:[classId], done:{ classId:'YYYY-MM-DD' }, created }]
+let state = {
+  version: APP_VERSION,
+  gradeCounts: [0, 0, 0, 0, 0, 0],  // 1〜6年の組の数
+  specials: [],                     // 特別支援学級の名前
+  classes: [],
+  kinds: DEFAULT_KINDS.slice(),
+  items: []
+};
+let selectedId = null;   // タブで選んでいる提出物
+let editingId = null;    // 編集中の提出物（新規は null）
+
+// ---------- 保存と読み込み ----------
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) state = Object.assign(state, JSON.parse(raw));
+  } catch (e) {
+    toast('保存データを読み込めませんでした');
+  }
+}
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    setSaveState('保存済み（' + nowTime() + '）');
+  } catch (e) {
+    setSaveState('⚠ 保存できませんでした。バックアップを取ってください');
+  }
+}
+function setSaveState(t) { document.getElementById('saveState').textContent = t; }
+
+// ---------- 小さな道具 ----------
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function nowTime() { const d = new Date(); return d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0'); }
+function md(s) { if (!s) return ''; const p = s.split('-'); return Number(p[1]) + '/' + Number(p[2]); }
+function youbi(s) { if (!s) return ''; const p = s.split('-'); return '日月火水木金土'[new Date(p[0], p[1] - 1, p[2]).getDay()]; }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+function classById(id) { return state.classes.find(c => c.id === id); }
+function gradeName(g) { return g === 0 ? '特別支援学級' : g + '年'; }
+
+// 締切との関係：'over'＝過ぎた、'soon'＝今日か明日、'' ＝まだ先か締切なし
+function dueStatus(item) {
+  if (!item.due) return '';
+  const t = todayStr();
+  if (item.due < t) return 'over';
+  const tm = new Date(); tm.setDate(tm.getDate() + 1);
+  const tomorrow = tm.getFullYear() + '-' + String(tm.getMonth() + 1).padStart(2, '0') + '-' + String(tm.getDate()).padStart(2, '0');
+  return item.due <= tomorrow ? 'soon' : '';
+}
+// 対象クラスのうち、今もある（設定で消えていない）クラスだけ
+function targetClasses(item) { return item.target.map(classById).filter(Boolean); }
+function progress(item) {
+  const tc = targetClasses(item);
+  const n = tc.filter(c => item.done[c.id]).length;
+  return { n, total: tc.length, complete: tc.length > 0 && n === tc.length };
+}
+
+// ---------- タブ切り替え ----------
+document.querySelectorAll('nav button').forEach(b => {
+  b.addEventListener('click', () => showTab(b.dataset.tab));
+});
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  ['items', 'matrix', 'settings', 'help'].forEach(t => document.getElementById('tab-' + t).classList.toggle('hidden', t !== name));
+  if (name === 'matrix') renderMatrix();
+  if (name === 'settings') renderSettings();
+  if (name === 'items') renderItems();
+}
+
+// =========================================================
+//  提出物タブ
+// =========================================================
+function renderKindSelects() {
+  const f = document.getElementById('filterKind');
+  const cur = f.value;
+  f.innerHTML = '<option value="">すべての種類</option>' + state.kinds.map(k => `<option>${esc(k)}</option>`).join('');
+  f.value = state.kinds.includes(cur) ? cur : '';
+  document.getElementById('fKind').innerHTML = state.kinds.map(k => `<option>${esc(k)}</option>`).join('');
+}
+
+// 提出物のタブ（締切の近い順。締切なしは最後）。v1.1 で左の一覧からタブに変更
+function renderItems() {
+  renderKindSelects();
+  const kind = document.getElementById('filterKind').value;
+  const showDone = document.getElementById('showDone').checked;
+  const list = state.items
+    .filter(it => !kind || it.kind === kind)
+    .filter(it => showDone || !progress(it).complete || it.id === selectedId)
+    .sort((a, b) => (a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : a.created - b.created);
+
+  // 選んでいるタブが表示されていなければ、先頭のタブを選ぶ
+  if (!list.some(it => it.id === selectedId) && document.getElementById('formPanel').classList.contains('hidden')) {
+    selectedId = list.length ? list[0].id : null;
+  }
+  document.getElementById('emptyList').classList.toggle('hidden', state.items.length > 0);
+  document.getElementById('itemList').innerHTML = list.map(it => {
+    const p = progress(it);
+    const ds = dueStatus(it);
+    let tag = '';
+    if (p.complete) tag = '<span class="tag done">済</span>';
+    else if (ds === 'over') tag = `<span class="tag over">未提出 ${p.total - p.n}</span>`;
+    else if (ds === 'soon') tag = '<span class="tag soon">締切近い</span>';
+    const cls = ['item-tab', it.id === selectedId ? 'selected' : '', p.complete ? 'complete' : (ds === 'over' ? 'over' : '')].join(' ');
+    return `<button class="${cls}" data-id="${it.id}" title="${esc(it.name)}">
+      <span class="name">${esc(it.name)}</span>
+      <span class="meta"><span>${it.due ? md(it.due) + '（' + youbi(it.due) + '）' : '締切なし'}</span><span>${p.n}/${p.total}</span>${tag}</span>
+    </button>`;
+  }).join('') + '<button class="item-tab add" id="btnNew">＋ 提出物を追加</button>';
+  document.querySelectorAll('#itemList .item-tab[data-id]').forEach(tb => tb.addEventListener('click', () => {
+    selectedId = tb.dataset.id; hideForm(); renderItems();
+  }));
+  document.getElementById('btnNew').addEventListener('click', () => showForm(null, false));
+  renderDetail();
+}
+document.getElementById('filterKind').addEventListener('change', renderItems);
+document.getElementById('showDone').addEventListener('change', renderItems);
+
+// 右の詳細：クラスごとの枠
+function renderDetail() {
+  const it = state.items.find(x => x.id === selectedId);
+  document.getElementById('detailEmpty').classList.toggle('hidden', !!it);
+  document.getElementById('detailBody').classList.toggle('hidden', !it);
+  document.getElementById('remindArea').classList.add('hidden');
+  if (!it) return;
+
+  const p = progress(it);
+  const ds = dueStatus(it);
+  document.getElementById('dName').textContent = it.name;
+  document.getElementById('dMeta').innerHTML =
+    `${esc(it.kind)}　／　締切 ${it.due ? md(it.due) + '（' + youbi(it.due) + '）' : 'なし'}　／　提出 ${p.n}/${p.total}` +
+    (it.memo ? `<br>メモ：${esc(it.memo)}` : '');
+
+  // 学年ごとにまとめる
+  const tc = targetClasses(it);
+  const grades = [...new Set(tc.map(c => c.grade))].sort((a, b) => (a || 99) - (b || 99));
+  document.getElementById('cardsArea').innerHTML = tc.length === 0
+    ? '<p class="muted">出すクラスが選ばれていません。「編集」で選んでください。</p>'
+    : grades.map(g => `<div class="grade-block"><h3>${gradeName(g)}</h3><div class="cards">` +
+      tc.filter(c => c.grade === g).map(c => {
+        const d = it.done[c.id];
+        const cls = d ? 'yes' : 'no' + (ds === 'over' ? ' over' : '');
+        const st = d ? `✔ 提出済<input type="date" value="${d}" data-date="${c.id}">` : (ds === 'over' ? '未提出（締切後）' : '未提出');
+        return `<div class="card ${cls}" data-cid="${c.id}"><div class="cls">${esc(c.label)}</div>` +
+          (c.teacher ? `<div class="teacher">${esc(c.teacher)}</div>` : '') + `<div class="st">${st}</div></div>`;
+      }).join('') + '</div></div>').join('');
+
+  // 枠を押す → 提出済／未提出を切り替える
+  document.querySelectorAll('#cardsArea .card').forEach(card => card.addEventListener('click', () => {
+    toggleDone(it, card.dataset.cid); renderItems();
+  }));
+  // 日付を直す（枠のクリックとは分ける）
+  document.querySelectorAll('#cardsArea input[data-date]').forEach(inp => {
+    inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('change', e => {
+      if (inp.value) { it.done[inp.dataset.date] = inp.value; save(); }
+    });
+  });
+}
+function toggleDone(item, cid) {
+  if (item.done[cid]) delete item.done[cid];
+  else item.done[cid] = todayStr();
+  save();
+}
+
+// 未提出のクラスを催促の文にする
+document.getElementById('btnRemind').addEventListener('click', () => {
+  const it = state.items.find(x => x.id === selectedId);
+  if (!it) return;
+  const rest = targetClasses(it).filter(c => !it.done[c.id]);
+  let text;
+  if (rest.length === 0) text = `【${it.name}】全クラス提出済です。ありがとうございました。`;
+  else {
+    const names = rest.map(c => c.label + (c.teacher ? '（' + c.teacher + '先生）' : '')).join('、');
+    text = `【${it.name}】` + (it.due ? `締切は${md(it.due)}（${youbi(it.due)}）です。` : '') +
+      `\nまだ提出されていないクラス：${names}\n提出をお願いします。`;
+  }
+  document.getElementById('remindText').value = text;
+  document.getElementById('remindArea').classList.remove('hidden');
+});
+document.getElementById('btnCopyRemind').addEventListener('click', () => {
+  const ta = document.getElementById('remindText');
+  ta.select();
+  try {
+    navigator.clipboard.writeText(ta.value).then(() => toast('コピーしました'), () => { document.execCommand('copy'); toast('コピーしました'); });
+  } catch (e) { document.execCommand('copy'); toast('コピーしました'); }
+});
+
+// ---------- 提出物の登録・編集 ----------
+function renderTargetBox(checkedIds) {
+  const set = new Set(checkedIds);
+  const grades = [...new Set(state.classes.map(c => c.grade))].sort((a, b) => (a || 99) - (b || 99));
+  const box = document.getElementById('targetBox');
+  if (state.classes.length === 0) {
+    box.innerHTML = '<span class="muted">クラスがまだありません。「設定・バックアップ」でクラスを作ってください。</span>';
+    return;
+  }
+  box.innerHTML = grades.map(g => `<div class="tg-row"><label><input type="checkbox" data-grade="${g}"> <b>${gradeName(g)}</b></label>` +
+    state.classes.filter(c => c.grade === g).map(c =>
+      `<label><input type="checkbox" data-cid="${c.id}" ${set.has(c.id) ? 'checked' : ''}> ${esc(c.label)}</label>`).join('') + '</div>').join('');
+  // 学年のチェックで、その学年をまとめて付け外し
+  box.querySelectorAll('input[data-grade]').forEach(gc => {
+    const g = Number(gc.dataset.grade);
+    const mine = () => [...box.querySelectorAll('input[data-cid]')].filter(i => classById(i.dataset.cid).grade === g);
+    gc.checked = mine().every(i => i.checked);
+    gc.addEventListener('change', () => mine().forEach(i => i.checked = gc.checked));
+  });
+}
+function setTargets(fn) {
+  document.querySelectorAll('#targetBox input[data-cid]').forEach(i => i.checked = fn(classById(i.dataset.cid)));
+  document.querySelectorAll('#targetBox input[data-grade]').forEach(gc => {
+    const g = Number(gc.dataset.grade);
+    gc.checked = [...document.querySelectorAll('#targetBox input[data-cid]')].filter(i => classById(i.dataset.cid).grade === g).every(i => i.checked);
+  });
+}
+document.getElementById('tgAll').addEventListener('click', () => setTargets(() => true));
+document.getElementById('tgNone').addEventListener('click', () => setTargets(() => false));
+document.getElementById('tgNormal').addEventListener('click', () => setTargets(c => c.grade !== 0));
+
+function showForm(item, isCopy) {
+  editingId = item && !isCopy ? item.id : null;
+  document.getElementById('formTitle').textContent = editingId ? '提出物を編集' : (isCopy ? '提出物を複製して追加' : '提出物を追加');
+  renderKindSelects();
+  document.getElementById('fName').value = item ? item.name + (isCopy ? '（コピー）' : '') : '';
+  document.getElementById('fKind').value = item ? item.kind : state.kinds[0];
+  document.getElementById('fDue').value = item && !isCopy ? (item.due || '') : '';
+  document.getElementById('fMemo').value = item ? (item.memo || '') : '';
+  renderTargetBox(item ? item.target : state.classes.map(c => c.id));
+  document.getElementById('formPanel').classList.remove('hidden');
+  document.getElementById('fName').focus();
+}
+function hideForm() { document.getElementById('formPanel').classList.add('hidden'); editingId = null; }
+
+document.getElementById('btnEdit').addEventListener('click', () => showForm(state.items.find(x => x.id === selectedId), false));
+document.getElementById('btnCopyItem').addEventListener('click', () => showForm(state.items.find(x => x.id === selectedId), true));
+document.getElementById('btnCancelItem').addEventListener('click', hideForm);
+
+document.getElementById('btnSaveItem').addEventListener('click', () => {
+  const name = document.getElementById('fName').value.trim();
+  if (!name) { toast('提出物の名前を入れてください'); return; }
+  const target = [...document.querySelectorAll('#targetBox input[data-cid]:checked')].map(i => i.dataset.cid);
+  if (target.length === 0) { toast('出すクラスを1つ以上選んでください'); return; }
+  const data = {
+    name, kind: document.getElementById('fKind').value,
+    due: document.getElementById('fDue').value, memo: document.getElementById('fMemo').value.trim(), target
+  };
+  if (editingId) {
+    Object.assign(state.items.find(x => x.id === editingId), data);
+    selectedId = editingId;
+  } else {
+    const it = Object.assign({ id: uid(), done: {}, created: Date.now() }, data);
+    state.items.push(it);
+    selectedId = it.id;
+  }
+  save(); hideForm(); renderItems(); toast('保存しました');
+});
+
+document.getElementById('btnDelete').addEventListener('click', () => {
+  const it = state.items.find(x => x.id === selectedId);
+  if (!it) return;
+  if (!confirm(`「${it.name}」を削除します。提出の記録も消えます。よろしいですか？`)) return;
+  state.items = state.items.filter(x => x.id !== selectedId);
+  selectedId = null; save(); renderItems();
+});
+
+// =========================================================
+//  一覧表タブ
+// =========================================================
+function renderMatrix() {
+  const showDone = document.getElementById('mShowDone').checked;
+  const items = state.items.filter(it => showDone || !progress(it).complete)
+    .sort((a, b) => (a.due || '9999') < (b.due || '9999') ? -1 : 1);
+  const area = document.getElementById('matrixArea');
+  if (state.classes.length === 0) { area.innerHTML = '<p class="muted">クラスがまだありません。</p>'; return; }
+  if (items.length === 0) { area.innerHTML = '<p class="muted">表示する提出物がありません。</p>'; return; }
+
+  let html = '<table class="matrix"><thead><tr><th class="itemname">提出物</th><th>締切</th>' +
+    state.classes.map(c => `<th>${esc(c.label)}</th>`).join('') + '<th>提出</th></tr></thead><tbody>';
+  items.forEach(it => {
+    const ds = dueStatus(it);
+    const p = progress(it);
+    html += `<tr><th class="itemname">${esc(it.name)}</th><td>${it.due ? md(it.due) : '－'}</td>`;
+    state.classes.forEach(c => {
+      if (!it.target.includes(c.id)) html += '<td class="na">－</td>';
+      else if (it.done[c.id]) html += `<td class="yes" data-i="${it.id}" data-c="${c.id}">○ ${md(it.done[c.id])}</td>`;
+      else html += `<td class="no ${ds === 'over' ? 'over' : ''}" data-i="${it.id}" data-c="${c.id}">${ds === 'over' ? '×' : ''}</td>`;
+    });
+    html += `<td>${p.n}/${p.total}</td></tr>`;
+  });
+  area.innerHTML = html + '</tbody></table>';
+  area.querySelectorAll('td[data-i]').forEach(td => td.addEventListener('click', () => {
+    toggleDone(state.items.find(x => x.id === td.dataset.i), td.dataset.c); renderMatrix();
+  }));
+}
+document.getElementById('mShowDone').addEventListener('change', renderMatrix);
+
+// =========================================================
+//  設定タブ
+// =========================================================
+function renderSettings() {
+  document.getElementById('gradeInputs').innerHTML = [1, 2, 3, 4, 5, 6].map(g =>
+    `<label>${g}年 <input type="number" min="0" max="10" style="width:52px" data-g="${g}" value="${state.gradeCounts[g - 1] || 0}"> 組</label>`).join('');
+  document.getElementById('specialInput').value = state.specials.join('\n');
+  document.getElementById('kindInput').value = state.kinds.join('\n');
+  renderTeachers();
+}
+function renderTeachers() {
+  const area = document.getElementById('teacherArea');
+  if (state.classes.length === 0) { area.innerHTML = '<p class="muted">クラスを作ると、ここで担任名を入れられます。</p>'; return; }
+  area.innerHTML = '<div class="row">' + state.classes.map(c =>
+    `<label>${esc(c.label)} <input style="width:110px" data-t="${c.id}" value="${esc(c.teacher)}" placeholder="担任名"></label>`).join('') + '</div>';
+  area.querySelectorAll('input[data-t]').forEach(inp => inp.addEventListener('change', () => {
+    classById(inp.dataset.t).teacher = inp.value.trim(); save();
+  }));
+}
+
+// クラスを作る。同じ名前のクラスは id と担任名を引き継ぐので、提出記録が残る
+document.getElementById('btnMakeClasses').addEventListener('click', () => {
+  const counts = [1, 2, 3, 4, 5, 6].map(g => Math.max(0, Math.min(10, Number(document.querySelector(`#gradeInputs input[data-g="${g}"]`).value) || 0)));
+  const specials = document.getElementById('specialInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const old = {}; state.classes.forEach(c => old[c.label] = c);
+  const next = [];
+  counts.forEach((n, i) => {
+    for (let k = 1; k <= n; k++) {
+      const label = (i + 1) + '-' + k;
+      next.push(old[label] ? Object.assign(old[label], { grade: i + 1 }) : { id: uid(), label, grade: i + 1, teacher: '' });
+    }
+  });
+  specials.forEach(label => next.push(old[label] ? Object.assign(old[label], { grade: 0 }) : { id: uid(), label, grade: 0, teacher: '' }));
+  const removed = state.classes.filter(c => !next.includes(c));
+  if (removed.length && !confirm('次のクラスがなくなります：' + removed.map(c => c.label).join('、') + '\nよろしいですか？')) return;
+  state.gradeCounts = counts; state.specials = specials; state.classes = next;
+  save(); renderSettings(); toast(`${next.length}クラスを作りました`);
+});
+
+document.getElementById('btnSaveKinds').addEventListener('click', () => {
+  const kinds = document.getElementById('kindInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (kinds.length === 0) { toast('種類を1つ以上入れてください'); return; }
+  state.kinds = kinds; save(); toast('種類を保存しました');
+});
+
+// ---------- バックアップ・復元 ----------
+function downloadBackup(suffix) {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `提出チェック_バックアップ_${todayStr()}${suffix || ''}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+document.getElementById('btnBackup').addEventListener('click', () => { downloadBackup(); toast('バックアップを保存しました'); });
+document.getElementById('restoreFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!Array.isArray(data.classes) || !Array.isArray(data.items)) throw new Error('形式が違います');
+      if (!confirm('今のデータを、このファイルの内容に置き換えます。よろしいですか？')) return;
+      state = Object.assign({ gradeCounts: [0, 0, 0, 0, 0, 0], specials: [], kinds: DEFAULT_KINDS.slice() }, data);
+      selectedId = null; save(); renderSettings(); toast('復元しました');
+    } catch (err) {
+      toast('このファイルは読み込めませんでした');
+    }
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+});
+document.getElementById('btnClearItems').addEventListener('click', () => {
+  if (!confirm('提出物と提出の記録をすべて消します。（先にバックアップを保存します）よろしいですか？')) return;
+  downloadBackup('_消す前');
+  state.items = []; selectedId = null; save(); toast('提出物を消しました');
+});
+
+// ---------- はじめ ----------
+load();
+renderItems();
+setSaveState('保存済み');
+// クラスが未設定なら、まず設定タブを開く
+if (state.classes.length === 0) { showTab('settings'); toast('はじめに、クラスを作ってください'); }
+</script>
+</body>
+</html>
